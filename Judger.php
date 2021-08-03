@@ -1,8 +1,9 @@
 <?php
-namespace App\Babel\Extension\template;//The 'template' should be replaced by the real oj code.
+namespace App\Babel\Extension\noiopen;
 
 use App\Babel\Submit\Curl;
 use App\Models\Submission\SubmissionModel;
+use KubAT\PhpSimple\HtmlDomParser;
 use App\Models\JudgerModel;
 use Requests;
 use Exception;
@@ -13,16 +14,17 @@ class Judger extends Curl
 
     public $verdict=[
         'Accepted'=>"Accepted",
+        'Wrong Answer'=>"Wrong Answer",
         "Presentation Error"=>"Presentation Error",
         'Time Limit Exceeded'=>"Time Limit Exceed",
         "Memory Limit Exceeded"=>"Memory Limit Exceed",
-        'Wrong Answer'=>"Wrong Answer",
         'Runtime Error'=>"Runtime Error",
         'Output Limit Exceeded'=>"Output Limit Exceeded",
         'Compile Error'=>"Compile Error",
+        'System Error'=>"System Error",
     ];
     private $model=[];
-    private $template=[];
+    private $noiopen=[];
 
 
     public function __construct()
@@ -35,26 +37,26 @@ class Judger extends Curl
     {
         $sub=[];
 
-        if (!isset($this->poj[$row['remote_id']])) {
+        if (!isset($this->noiopen[$row['remote_id']])) {
             $judgerDetail=$this->model["judgerModel"]->detail($row['jid']);
-            $this->appendPOJStatus($judgerDetail['handle'], $row['remote_id']);
-            if (!isset($this->poj[$row['remote_id']])) {
+            $this->appendNOIOpenStatus($judgerDetail['handle'], $row['remote_id']);
+            if (!isset($this->noiopen[$row['remote_id']])) {
                 return;
             }
         }
 
-        $status=$this->poj[$row['remote_id']];
-        $sub['verdict']=$this->verdict[$status['verdict']];
+        $status=$this->noiopen[$row['remote_id']];
 
-        if ($sub['verdict']=='Compile Error') {
-            try {
-                $res=Requests::get('http://poj.org/showcompileinfo?solution_id='.$row['remote_id']);
-                preg_match('/<pre>([\s\S]*)<\/pre>/', $res->body, $match);
-                $sub['compile_info']=html_entity_decode($match[1], ENT_QUOTES);
-            } catch (Exception $e) {
-            }
+        if(!isset($this->verdict[$status['verdict']])) {
+            return ;
+        }
+        
+        if($status['verdict']=='Waiting'){
+            return ;
         }
 
+        $sub['verdict']=$this->verdict[$status['verdict']];
+        $sub['compile_info']=$status['compile_info'];
         $sub["score"]=$sub['verdict']=="Accepted" ? 1 : 0;
         $sub['time']=$status['time'];
         $sub['memory']=$status['memory'];
@@ -63,19 +65,31 @@ class Judger extends Curl
         $this->model["submissionModel"]->updateSubmission($row['sid'], $sub);
     }
 
-    private function appendPOJStatus($judger, $first=null)
+    private function appendNOIOpenStatus($judger, $remoteID)
     {
-        if ($first!==null) {
-            $first++;
+        $submissionDetailHTML=$this->grab_page([
+            'site' => "http://noi.openjudge.cn/ch0101/solution/$remoteID/",
+            'oj' => 'noiopen',
+            'handle' => $judger,
+        ]);
+        $submissionDetail=HtmlDomParser::str_get_html($submissionDetailHTML, true, true, DEFAULT_TARGET_CHARSET, false);
+        $compileDetailHTML=$submissionDetail->find('div.compile-info dl', 0)->innertext;
+        $memory=null;
+        $time=null;
+        if(mb_strpos($compileDetailHTML,'<dt>内存:</dt>')!==false) {
+            $memory=(explode('<dd>', explode('kB</dd>', explode('<dt>内存:</dt>', $compileDetailHTML, 2)[1], 2)[0], 2)[1])*1024;
         }
-        $res=Requests::get("http://poj.org/status?user_id={$judger}&top={$first}");
-        $rows=preg_match_all('/<tr align=center><td>(\d+)<\/td><td>.*?<\/td><td>.*?<\/td><td>.*?<font color=.*?>(.*?)<\/font>.*?<\/td><td>(\d*)K?<\/td><td>(\d*)(?:MS)?<\/td>/', $res->body, $matches);
-        for ($i=0; $i<$rows; $i++) {
-            $this->poj[$matches[1][$i]]=[
-                'verdict'=>$matches[2][$i],
-                'memory'=>$matches[3][$i] ? $matches[3][$i] : 0,
-                'time'=>$matches[4][$i] ? $matches[4][$i] : 0,
-            ];
+        if(mb_strpos($compileDetailHTML,'<dt>时间:</dt>')!==false) {
+            $time=(explode('<dd>', explode('ms</dd>', explode('<dt>时间:</dt>', $compileDetailHTML, 2)[1], 2)[0], 2)[1]);
         }
+        $this->noiopen[$remoteID]=[
+            'verdict'=>trim($submissionDetail->find('p.compile-status a', 0)->plaintext),
+            'memory'=>$memory,
+            'time'=>$time,
+            'compile_info'=>null,
+        ];
+        if ($this->noiopen[$remoteID]['verdict']=='Compile Error') {
+            $this->noiopen[$remoteID]['compile_info']=$submissionDetail->find('pre', 0)->innertext;
+        }   
     }
 }
