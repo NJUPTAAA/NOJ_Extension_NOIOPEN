@@ -196,7 +196,10 @@ class Crawler extends CrawlerBase
             $note.=$this->cachedInnerText(explode('</dd>', explode('<dt>提示</dt>', $mainProblemHTML, 2)[1], 2)[0]);
         }
         if(mb_strpos($mainProblemHTML,'<dt>来源</dt>')!==false) {
-            $note.=$this->cachedInnerText(explode('</dd>', explode('<dt>来源</dt>', $mainProblemHTML, 2)[1], 2)[0]);
+            if(!is_null($note)){
+                $note.="<br><br>";
+            }
+            $note.='Source: '.$this->cachedInnerText(explode('</dd>', explode('<dt>来源</dt>', $mainProblemHTML, 2)[1], 2)[0]);
         }
         $this->pro['note']=$note;
         $this->pro['source']=trim($NOIProblemPage->find("div.contest-title-tab h2", -1)->plaintext);
