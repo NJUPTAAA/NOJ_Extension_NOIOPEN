@@ -85,8 +85,8 @@ class Submitter extends Curl
         $validator=Validator::make($this->post_data, [
             'pid' => 'required|integer',
             'coid' => 'required|integer',
-            'iid' => 'required|integer',
-            'cid' => 'required|integer',
+            'iid' => 'required',
+            'cid' => 'required',
             'solution' => 'required',
         ]);
 
