@@ -71,7 +71,7 @@ class Submitter extends Curl
             "handle"=>$this->selectedJudger["handle"]
         ]);
 
-        $response=json_decode($response);
+        $response=json_decode($response, true);
         if ($response["result"]=="ERROR") {
             $this->sub['verdict']='Submission Error';
         } else {
