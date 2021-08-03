@@ -1,18 +1,17 @@
 <?php
-namespace App\Babel\Extension\template;//The 'template' should be replaced by the real oj code.
+namespace App\Babel\Extension\noiopen;
 
 use App\Babel\Submit\Curl;
-use App\Models\CompilerModel;
-use App\Models\JudgerModel;
 use App\Models\OJModel;
+use App\Models\JudgerModel;
 use Illuminate\Support\Facades\Validator;
 use Requests;
 
 class Submitter extends Curl
 {
+    public $oid=null;
     protected $sub;
     public $post_data=[];
-    protected $oid;
     protected $selectedJudger;
 
     public function __construct(& $sub, $all_data)
@@ -20,10 +19,7 @@ class Submitter extends Curl
         $this->sub=& $sub;
         $this->post_data=$all_data;
         $judger=new JudgerModel();
-        $this->oid=OJModel::oid('template');//The 'template' should be replaced by the real oj code.
-        if(is_null($this->oid)) {
-            throw new Exception("Online Judge Not Found");
-        }
+        $this->oid=OJModel::oid('noiopen');
         $judger_list=$judger->list($this->oid);
         $this->selectedJudger=$judger_list[array_rand($judger_list)];
     }
@@ -31,20 +27,20 @@ class Submitter extends Curl
     private function _login()
     {
         $response=$this->grab_page([
-            "site"=>'http://poj.org',
-            "oj"=>'poj',
+            "site"=>'http://noi.openjudge.cn',
+            "oj"=>'noiopen',
             "handle"=>$this->selectedJudger["handle"]
         ]);
-        if (strpos($response, 'Log Out')===false) {
+        if (mb_strpos($response, '登出')===false) {
             $params=[
-                'user_id1' => $this->selectedJudger["handle"],
-                'password1' => $this->selectedJudger["password"],
-                'B1' => 'login',
+                'email' => $this->selectedJudger["handle"],
+                'password' => $this->selectedJudger["password"],
+                'redirectUrl' => '',
             ];
             $this->login([
-                "url"=>'http://poj.org/login',
+                "url"=>'http://noi.openjudge.cn/api/auth/login',
                 "data"=>http_build_query($params),
-                "oj"=>'poj',
+                "oj"=>'noiopen',
                 "ret"=>true,
                 "handle"=>$this->selectedJudger["handle"]
             ]);
@@ -53,35 +49,34 @@ class Submitter extends Curl
 
     private function _submit()
     {
+        $this->sub["jid"]=$this->selectedJudger["jid"];
+
         $params=[
-            'problem_id' => $this->post_data['iid'],
+            'contestId' => $this->post_data['cid'],
+            'problemNumber' => $this->post_data['iid'],
             'language' => $this->post_data['lang'],
             'source' => base64_encode($this->post_data["solution"]),
-            'encoded' => 1, // Optional, but sometimes base64 seems smaller than url encode
+            'sourceEncode' => 'base64',
         ];
 
         $response=$this->post_data([
-            "site"=>"http://poj.org/submit",
+            "site"=>"http://noi.openjudge.cn/api/solution/submit",
             "data"=>http_build_query($params),
-            "oj"=>"poj",
+            "oj"=>"noiopen",
             "ret"=>true,
             "follow"=>false,
-            "returnHeader"=>true,
+            "returnHeader"=>false,
             "postJson"=>false,
             "extraHeaders"=>[],
             "handle"=>$this->selectedJudger["handle"]
         ]);
 
-        if (!preg_match('/Location: .*\/status/', $response, $match)) {
+        $response=json_decode($response);
+        if ($response["result"]=="ERROR") {
             $this->sub['verdict']='Submission Error';
         } else {
-            $res=Requests::get('http://poj.org/status?problem_id='.$this->post_data['iid'].'&user_id='.urlencode($this->selectedJudger["handle"]));
-            if (!preg_match('/<tr align=center><td>(\d+)<\/td>/', $res->body, $match)) {
-                $this->sub['verdict']='Submission Error';
-            } else {
-                $this->sub['remote_id']=$match[1];
-                $this->sub['jid']=$this->selectedJudger['jid'];
-            }
+            $submissionURL=$response["redirect"];
+            $this->sub['remote_id']=explode('/',explode("solution/",$submissionURL)[1])[0];
         }
     }
 
@@ -91,6 +86,7 @@ class Submitter extends Curl
             'pid' => 'required|integer',
             'coid' => 'required|integer',
             'iid' => 'required|integer',
+            'cid' => 'required|integer',
             'solution' => 'required',
         ]);
 
