@@ -50,7 +50,7 @@ class Judger extends Curl
         if(!isset($this->verdict[$status['verdict']])) {
             return ;
         }
-        
+
         if($status['verdict']=='Waiting'){
             return ;
         }
@@ -74,10 +74,10 @@ class Judger extends Curl
         ]);
         $submissionDetail=HtmlDomParser::str_get_html($submissionDetailHTML, true, true, DEFAULT_TARGET_CHARSET, false);
         $compileDetailHTML=$submissionDetail->find('div.compile-info dl', 0)->innertext;
-        $memory=null;
-        $time=null;
+        $memory=0;
+        $time=0;
         if(mb_strpos($compileDetailHTML,'<dt>内存:</dt>')!==false) {
-            $memory=(explode('<dd>', explode('kB</dd>', explode('<dt>内存:</dt>', $compileDetailHTML, 2)[1], 2)[0], 2)[1])*1024;
+            $memory=(explode('<dd>', explode('kB</dd>', explode('<dt>内存:</dt>', $compileDetailHTML, 2)[1], 2)[0], 2)[1]);
         }
         if(mb_strpos($compileDetailHTML,'<dt>时间:</dt>')!==false) {
             $time=(explode('<dd>', explode('ms</dd>', explode('<dt>时间:</dt>', $compileDetailHTML, 2)[1], 2)[0], 2)[1]);
@@ -90,6 +90,6 @@ class Judger extends Curl
         ];
         if ($this->noiopen[$remoteID]['verdict']=='Compile Error') {
             $this->noiopen[$remoteID]['compile_info']=$submissionDetail->find('pre', 0)->innertext;
-        }   
+        }
     }
 }
