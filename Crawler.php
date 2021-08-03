@@ -1,5 +1,5 @@
 <?php
-namespace App\Babel\Extension\template;//The 'template' should be replaced by the real oj code.
+namespace App\Babel\Extension\noiopen;
 
 use App\Babel\Crawl\CrawlerBase;
 use App\Models\ProblemModel;
@@ -11,26 +11,29 @@ use Exception;
 class Crawler extends CrawlerBase
 {
     public $oid=null;
-    public $prefix="Template";//The 'Template' should be replaced by the real oj name.
+    public $prefix="NOIOPJ";
+    private $ignoreCon=['math'];
     private $con;
+    private $action;
+    private $cached;
     private $imgi;
     /**
      * Initial
      *
      * @return Response
      */
-    public function __construct($conf)
+    public function start($conf)
     {
-        $action=isset($conf["action"])?$conf["action"]:'crawl_problem';
+        $this->action=isset($conf["action"])?$conf["action"]:'crawl_problem';
+        $this->cached=isset($conf["cached"])?$conf["cached"]:false;
         $con=isset($conf["con"])?$conf["con"]:'all';
-        $cached=isset($conf["cached"])?$conf["cached"]:false;
-        $this->oid=OJModel::oid('template');//The 'template' should be replaced by the real oj code.
+        $this->oid=OJModel::oid('noiopen');
 
         if(is_null($this->oid)) {
             throw new Exception("Online Judge Not Found");
         }
 
-        if ($action=='judge_level') {
+        if ($this->action=='judge_level') {
             $this->judge_level();
         } else {
             $this->crawl($con);
@@ -42,25 +45,9 @@ class Crawler extends CrawlerBase
         // TODO
     }
 
-    private static function find($pattern, $subject)
+    private function cachedInnerText($html, $tag='dd')
     {
-        if (preg_match($pattern, $subject, $matches)) {
-            return $matches[1];
-        }
-        return null;
-    }
-
-    private function getDOM($html, $start, $end)
-    {
-        if ($start===false || $end===false) {
-            throw new Exception("Missing keywords.");
-        }
-        return $this->cacheImage(HtmlDomParser::str_get_html(substr($html, $start, $end-$start), true, true, DEFAULT_TARGET_CHARSET, false));
-    }
-
-    private function getInnertext($html, $start, $end, $tag)
-    {
-        return $this->getDOM($html, $start, $end)->find($tag, 0)->innertext();
+        return $this->cacheImage(HtmlDomParser::str_get_html($html, true, true, DEFAULT_TARGET_CHARSET, false))->find($tag, 0)->innertext;
     }
 
     private function cacheImage($dom)
@@ -70,11 +57,11 @@ class Crawler extends CrawlerBase
             if (strpos($src, '://')!==false) {
                 $url=$src;
             } elseif ($src[0]=='/') {
-                $url='http://poj.org'.$src;
+                $url='http://noi.openjudge.cn'.$src;
             } else {
-                $url='http://poj.org/'.$src;
+                $url='http://noi.openjudge.cn/'.$src;
             }
-            $res=Requests::get($url, ['Referer' => 'http://poj.org']);
+            $res=Requests::get($url, ['Referer' => 'http://noi.openjudge.cn']);
             $ext=['image/jpeg'=>'.jpg', 'image/png'=>'.png', 'image/gif'=>'.gif', 'image/bmp'=>'.bmp'];
             if (isset($res->headers['content-type'])) {
                 $cext=$ext[$res->headers['content-type']];
@@ -87,82 +74,132 @@ class Crawler extends CrawlerBase
                 }
             }
             $fn=$this->con.'_'.($this->imgi++).$cext;
-            $dir=base_path("public/external/poj/img");
+            $dir=base_path("public/external/noiopen/img");
             if (!file_exists($dir)) {
                 mkdir($dir, 0755, true);
             }
-            file_put_contents(base_path("public/external/poj/img/$fn"), $res->body);
-            $ele->src='/external/poj/img/'.$fn;
+            file_put_contents(base_path("public/external/noiopen/img/$fn"), $res->body);
+            $ele->src='/external/noiopen/img/'.$fn;
         }
         return $dom;
     }
 
     public function crawl($con)
     {
-        if ($con=='all') {
-            // TODO
+        $this->line("<fg=yellow>Fetching:   </>General List");
+        $ignoreCon = $this->ignoreCon;
+        $NOIHomePage=HtmlDomParser::str_get_html(Requests::get("http://noi.openjudge.cn/", ['Referer' => 'http://noi.openjudge.cn'])->body, true, true, DEFAULT_TARGET_CHARSET, false);
+        $conElement=$NOIHomePage->find(".practice-info h3 a");
+        $allCon=[];
+        foreach($conElement as $element){
+            $tempCon=$element->href;
+            if(!in_array($tempCon, $ignoreCon)){
+                $allCon[]=trim($tempCon, " \t\n\r\0\x0B/");
+            }
+        }
+        $this->line("<fg=green>Fetched:    </>General List");
+        if($con=='all'){
+            foreach($allCon as $contestID){
+                $this->crawlContest($contestID);
+            }
+        }elseif(in_array($con, $ignoreCon)){
+            $this->line("\n  <bg=red;fg=white> Exception </> : <fg=yellow>The specified con is configured to be ignored.</>\n");
+        }else{
+            foreach($allCon as $contestID){
+                if ($con==$contestID) {
+                    $this->crawlContest($contestID);
+                }
+            }
+        }
+    }
+
+    protected function crawlContest($contestID)
+    {
+        $NOIContestPage=HtmlDomParser::str_get_html(Requests::get("http://noi.openjudge.cn/$contestID/", ['Referer' => 'http://noi.openjudge.cn'])->body, true, true, DEFAULT_TARGET_CHARSET, false);
+        $probElement=$NOIContestPage->find(".problem-id a");
+        $NOIContestRankingPage=HtmlDomParser::str_get_html(Requests::get("http://noi.openjudge.cn/$contestID/ranking/", ['Referer' => 'http://noi.openjudge.cn'])->body, true, true, DEFAULT_TARGET_CHARSET, false);
+        $contestRealID=$NOIContestRankingPage->find("input[name='contestId']", 0)->value;
+        foreach($probElement as $probID){
+            $this->_crawl(trim($probID->href), trim($probID->plaintext), trim($contestRealID), 5);
+        }
+    }
+
+    protected function _crawl($contestProblemUrl, $problemInternalID, $contestRealID, $retry=1)
+    {
+        $attempts=1;
+        while($attempts <= $retry){
+            try{
+                $this->__crawl($contestProblemUrl, $problemInternalID, $contestRealID);
+            }catch(Exception $e){
+                $attempts++;
+                $this->line("\n  <bg=red;fg=white> Exception </> : <fg=yellow>{$e->getMessage()} at {$e->getFile()}:{$e->getLine()}</>\n");
+                continue;
+            }
+            break;
+        }
+    }
+
+    protected function __crawl($contestProblemUrl, $problemInternalID, $contestRealID)
+    {
+        $this->_resetPro();
+        $this->imgi=1;
+        $probUrl="http://noi.openjudge.cn$contestProblemUrl"; // http://noi.openjudge.cn/ch0113/01/
+        $con=strtoupper(str_replace('/','',$contestProblemUrl));
+        $this->con=$con;
+        $problemModel=new ProblemModel();
+        if(!empty($problemModel->basic($problemModel->pid($this->prefix.$con))) && $this->action=="update_problem"){
             return;
         }
-        $this->con=$con;
-        $this->imgi=1;
-        $problemModel=new ProblemModel();
-        $res=Requests::get("http://poj.org/problem?id={$con}&lang=zh-CN&change=true"); // I have no idea what does `change` refers to
-        if (strpos($res->body, 'Can not find problem')!==false) {
-            header('HTTP/1.1 404 Not Found');
-            die();
-        }
+        if($this->action=="crawl_problem") $this->line("<fg=yellow>Crawling:   </>{$this->prefix}{$con}");
+        elseif($this->action=="update_problem") $this->line("<fg=yellow>Updating:   </>{$this->prefix}{$con}");
+        else return;
+        $res=Requests::get($probUrl, ['Referer' => 'http://noi.openjudge.cn']);
+        $NOIProblemPage=HtmlDomParser::str_get_html($res->body, true, true, DEFAULT_TARGET_CHARSET, false);
         $this->pro['pcode']=$this->prefix.$con;
         $this->pro['OJ']=$this->oid;
-        $this->pro['contest_id']=null;
-        $this->pro['index_id']=$con;
-        $this->pro['origin']="http://poj.org/problem?id={$con}&lang=zh-CN&change=true";
-        $this->pro['title']=self::find('/<div class="ptt" lang=".*?">([\s\S]*?)<\/div>/', $res->body);
-        $this->pro['time_limit']=self::find('/Time Limit:.*?(\d+)MS/', $res->body);
-        $this->pro['memory_limit']=self::find('/Memory Limit:.*?(\d+)K/', $res->body);
-        $this->pro['solved_count']=self::find('/Accepted:.*?(\d+)/', $res->body);
+        $this->pro['contest_id']=$contestRealID;
+        $this->pro['index_id']=$problemInternalID;
+        $this->pro['origin']=$probUrl;
+        $this->pro['title']=explode(":",$NOIProblemPage->find("div#pageTitle", 0)->plaintext,2)[1];
+        $problemParams=$NOIProblemPage->find(".problem-params dd");
+        $this->pro['time_limit']=explode('ms',$problemParams[0]->plaintext)[0];
+        $this->pro['memory_limit']=explode('kB',$problemParams[1]->plaintext)[0];
+        $this->pro['solved_count']=explode('<dd>',explode('</dd>',explode('通过人数</dt>', $res->body)[1],2)[0])[1];
         $this->pro['input_type']='standard input';
         $this->pro['output_type']='standard output';
-        $this->pro['file']=0;
-        $this->pro['file_url']=null;
-        $descPattern='<p class="pst">Description</p>';
-        $inputPattern='<p class="pst">Input</p>';
-        $outputPattern='<p class="pst">Output</p>';
-        $sampleInputPattern='<p class="pst">Sample Input</p>';
-        $sampleOutputPattern='<p class="pst">Sample Output</p>';
-        $notePattern='<p class="pst">Hint</p>';
-        $sourcePattern='<p class="pst">Source</p>';
-        $endPattern='</td>';
 
-        $pos1=strpos($res->body, $descPattern)+strlen($descPattern);
-        $pos2=strpos($res->body, $inputPattern, $pos1);
-        $this->pro['description']=trim($this->getInnertext($res->body, $pos1, $pos2, 'div'));
-        $pos1=$pos2+strlen($inputPattern);
-        $pos2=strpos($res->body, $outputPattern, $pos1);
-        $this->pro['input']=trim($this->getInnertext($res->body, $pos1, $pos2, 'div'));
-        $pos1=$pos2+strlen($outputPattern);
-        $pos2=strpos($res->body, $sampleInputPattern, $pos1);
-        $this->pro['output']=trim($this->getInnertext($res->body, $pos1, $pos2, 'div'));
-        $pos1=$pos2+strlen($sampleInputPattern);
-        $pos2=strpos($res->body, $sampleOutputPattern, $pos1);
-        $sampleInput=$this->getInnertext($res->body, $pos1, $pos2, 'pre');
-        $pos1=$pos2+strlen($sampleOutputPattern);
-        $pos2=strpos($res->body, $notePattern, $pos1);
-        if ($hasNote=($pos2!==false)) {
-            $sampleOutput=$this->getInnertext($res->body, $pos1, $pos2, 'pre');
-            $pos1=$pos2+strlen($notePattern);
+        $mainProblemHTML=$NOIProblemPage->find("dl.problem-content", 0)->innertext;
+
+        if(mb_strpos($mainProblemHTML,'<dt>描述</dt>')!==false) {
+            $this->pro['description']=$this->cachedInnerText(explode('</dd>', explode('<dt>描述</dt>', $mainProblemHTML, 2)[1], 2)[0]);
         }
-        $pos2=strpos($res->body, $sourcePattern, $pos1);
-        $temp=$this->getDOM($res->body, $pos1, $pos2);
-        if ($hasNote) {
-            $this->pro['note']=trim($temp->find('div', 0)->innertext());
-        } else {
-            $sampleOutput=$temp->find('pre', 0)->innertext();
-            $this->pro['note']=null;
+        if(mb_strpos($mainProblemHTML,'<dt>输入</dt>')!==false) {
+            $this->pro['input']=$this->cachedInnerText(explode('</dd>', explode('<dt>输入</dt>', $mainProblemHTML, 2)[1], 2)[0]);
+        }
+        if(mb_strpos($mainProblemHTML,'<dt>输出</dt>')!==false) {
+            $this->pro['output']=$this->cachedInnerText(explode('</dd>', explode('<dt>输出</dt>', $mainProblemHTML, 2)[1], 2)[0]);
+        }
+
+        $sampleInput=null;
+        $sampleOutput=null;
+        if(mb_strpos($mainProblemHTML,'<dt>样例输入</dt>')!==false) {
+            $sampleInput=$this->cachedInnerText(explode('</dd>', explode('<dt>样例输入</dt>', $mainProblemHTML, 2)[1], 2)[0], 'pre');
+        }
+        if(mb_strpos($mainProblemHTML,'<dt>样例输出</dt>')!==false) {
+            $sampleOutput=$this->cachedInnerText(explode('</dd>', explode('<dt>样例输出</dt>', $mainProblemHTML, 2)[1], 2)[0], 'pre');
         }
         $this->pro['sample']=[['sample_input'=>$sampleInput, 'sample_output'=>$sampleOutput]];
-        $pos1=$pos2+strlen($sourcePattern);
-        $pos2=strpos($res->body, $endPattern, $pos1);
-        $this->pro['source']=trim($this->getDOM($res->body, $pos1, $pos2)->find('div', 0)->find('a', 0)->innertext());
+
+
+        $note=null;
+        if(mb_strpos($mainProblemHTML,'<dt>提示</dt>')!==false) {
+            $note.=$this->cachedInnerText(explode('</dd>', explode('<dt>提示</dt>', $mainProblemHTML, 2)[1], 2)[0]);
+        }
+        if(mb_strpos($mainProblemHTML,'<dt>来源</dt>')!==false) {
+            $note.=$this->cachedInnerText(explode('</dd>', explode('<dt>来源</dt>', $mainProblemHTML, 2)[1], 2)[0]);
+        }
+        $this->pro['note']=$note;
+        $this->pro['source']=trim($NOIProblemPage->find("div.contest-title-tab h2", -1)->plaintext);
 
         $problem=$problemModel->pid($this->pro['pcode']);
 
@@ -173,6 +210,7 @@ class Crawler extends CrawlerBase
             $new_pid=$this->insertProblem($this->oid);
         }
 
-        // $problemModel->addTags($new_pid, $tag); // not present
+        if($this->action=="crawl_problem") $this->line("<fg=green>Crawled:    </>{$this->prefix}{$con}");
+        elseif($this->action=="update_problem") $this->line("<fg=green>Updated:    </>{$this->prefix}{$con}");
     }
 }
