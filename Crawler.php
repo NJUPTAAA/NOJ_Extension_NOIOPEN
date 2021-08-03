@@ -163,7 +163,7 @@ class Crawler extends CrawlerBase
         $this->pro['title']=explode(":",$NOIProblemPage->find("div#pageTitle", 0)->plaintext,2)[1];
         $problemParams=$NOIProblemPage->find(".problem-params dd");
         $this->pro['time_limit']=explode('ms',$problemParams[0]->plaintext)[0];
-        $this->pro['memory_limit']=explode('kB',$problemParams[1]->plaintext)[0];
+        $this->pro['memory_limit']=(explode('kB',$problemParams[1]->plaintext)[0])*1024;
         $this->pro['solved_count']=explode('<dd>',explode('</dd>',explode('通过人数</dt>', $res->body)[1],2)[0])[1];
         $this->pro['input_type']='standard input';
         $this->pro['output_type']='standard output';
