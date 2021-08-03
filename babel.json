@@ -1,13 +1,13 @@
 {
-    "name":"Template",
-    "code":"template",
-    "icon":"resources/template@2x.png",
+    "name":"NOIOPEN",
+    "code":"noiopen",
+    "icon":"resources/noiopen@2x.png",
     "type":"virtual-judge",
-    "description": "Template of Interface for NOJ",
+    "description": "NOI Open Judge Interface for NOJ",
     "license": "MIT",
-    "repository":"https://github.com/NJUPTAAA/NOJ_Extension_Babel_Template",
-    "version":"0.0.1",
-    "website":"https://acm.njupt.edu.cn/",
+    "repository":"https://github.com/NJUPTAAA/NOJ_Extension_NOIOPEN",
+    "version":"0.1.0",
+    "website":"http://noi.openjudge.cn/",
     "custom":{
         "css":"resources/custom.css"
     },
@@ -18,6 +18,6 @@
         "installer":"Installer"
     },
     "require":{
-        "NOJ":"0.3.2"
+        "NOJ":"^0.4.2"
     }
 }
