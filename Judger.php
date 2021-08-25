@@ -3,6 +3,7 @@ namespace App\Babel\Extension\noiopen;
 
 use App\Babel\Submit\Curl;
 use App\Models\Submission\SubmissionModel;
+use App\Models\Eloquent\Problem;
 use KubAT\PhpSimple\HtmlDomParser;
 use App\Models\JudgerModel;
 use Requests;
@@ -39,7 +40,7 @@ class Judger extends Curl
 
         if (!isset($this->noiopen[$row['remote_id']])) {
             $judgerDetail=$this->model["judgerModel"]->detail($row['jid']);
-            $this->appendNOIOpenStatus($judgerDetail['handle'], $row['remote_id']);
+            $this->appendNOIOpenStatus($judgerDetail['handle'], $row['pid'], $row['remote_id']);
             if (!isset($this->noiopen[$row['remote_id']])) {
                 return;
             }
@@ -65,10 +66,12 @@ class Judger extends Curl
         $this->model["submissionModel"]->updateSubmission($row['sid'], $sub);
     }
 
-    private function appendNOIOpenStatus($judger, $remoteID)
+    private function appendNOIOpenStatus($judger, $pid, $remoteID)
     {
+        $origin = Problem::findOrFail($pid)->origin;
+        $contestChar = explode('/', explode('http://noi.openjudge.cn/', $origin, 2)[1], 2)[0];
         $submissionDetailHTML=$this->grab_page([
-            'site' => "http://noi.openjudge.cn/ch0101/solution/$remoteID/",
+            'site' => "http://noi.openjudge.cn/$contestChar/solution/$remoteID/",
             'oj' => 'noiopen',
             'handle' => $judger,
         ]);
